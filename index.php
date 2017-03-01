@@ -22,6 +22,52 @@ function getMemes($count, $owner, $album){
 
 }
 
+function getUsers($id){
+
+    global $token;
+    $request_params = array(
+        'group_id' => $id,
+        'sort' => "time_asc",
+        'access_token' => $token,
+        'count' => 1000,
+        'v' => '5.62'
+    );
+
+    $users = json_decode(file_get_contents('https://api.vk.com/method/groups.getMembers?' . http_build_query($request_params)));
+
+    return $users->response->items;
+
+}
+
+function getMessageUsers(){
+
+    global $token;
+    $request_params = array(
+        'access_token' => $token,
+        'count' => 200,
+        'offset' => 0,
+        'v' => '5.62'
+    );
+
+    $user_items = array();
+    for ($i = 0; $i < 3; $i++ ){//get count
+        $data = json_decode(file_get_contents('https://api.vk.com/method/messages.getDialogs?' . http_build_query($request_params)));
+        $user_items = array_merge($user_items, $data->response->items);
+        $request_params['offset'] += 200;
+    }
+
+
+
+    $users_ids = array();
+    foreach ($user_items as $dialog){
+        array_push($users_ids, $dialog->message->user_id);
+    }
+    return $users_ids;
+
+}
+
+
+
 function SortRightWay($message_ex){
     $bus_array = array_map('mb_strtolower', array(1,"2","3","5","6","7","8","9","10","11","12","13","14","16","17","18","19","20","21","22","23","24","25","26","27","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","11А","12А","13А","15А","15Б","15В","1А","1Т","21А","21Б","23А","23Б","24А","2А","2Т","37А","39А","39Б","3Т","44А","4Т","5Т","6Т","7Т","8Т"));
 
@@ -437,7 +483,7 @@ switch (@$data->type) {
             $request_params['attachment'] = getMemes(500,"-107855742",'wall');
             $request_params['message'] = 'Мемыыыы, наканецтааааа (vk.com/kultandprosvet)';
         }
-        if ($user_message == 'привет') $request_params['message'] = "Привет, {$user_name}!";
+        if (strpos($user_message, 'привет') !== false) $request_params['message'] = "Привет, {$user_name}!";
         if (strpos($user_message, 'спасибо') !== false || $user_message == 'спс' || $user_message == 'красава') $request_params['message'] = "Пожалуйста, {$user_name} 😌";
         if (strpos($user_message, 'как дела') !== false || $user_message == 'как сам?') $request_params['message'] = "Все отлично, а ты как, {$user_name}?";
         if ($user_message == 'нормально' || $user_message == 'хорошо' || $user_message == 'збс' || $user_message == 'отлично' || $user_message == 'норм') $request_params['message'] = "Круто!";

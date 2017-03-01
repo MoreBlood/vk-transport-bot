@@ -8,6 +8,7 @@
  */
 date_default_timezone_set("Europe/Minsk");
 include 'tr.php';
+include 'api.php';
 
 function re ($str){
     return str_replace("ё", "е", $str);
@@ -18,6 +19,7 @@ class Data
     private $DataObject = NULL;
     private $UserID = NULL;
     private $UserMessage = NULL;
+    private $type = NULL;
 
     function __construct()
     {
@@ -31,6 +33,7 @@ class Data
             $this->DataObject = json_decode($data);
             $this->UserID = $this->DataObject->object->user_id;
             $this->UserMessage = (mb_strtolower($this->DataObject->object->body));
+            $this->type = $this->DataObject->type;
         }
 
     }
@@ -133,11 +136,11 @@ class Transport{
         return array_unique(array_merge($this->GetStopsBack(), $this->GetStopsForward()));
     }
     public function GetRouteForward(){
-        return array(current($this->GetStopsForward()), @end($this->GetStopsForward()));
+        return current($this->GetStopsForward()) .' - '. @end($this->GetStopsForward());
 
     }
     public function GetRouteBack(){
-        return array(current($this->GetStopsBack()), @end($this->GetStopsBack()));
+        return current($this->GetStopsBack()) .' - '. @end($this->GetStopsBack());
     }
 
 
@@ -223,11 +226,8 @@ class Stop{
         $path = array_diff(scandir("bus/"), array('..', '.'));
         foreach ($path as $key){
             $cur_file = explode(".", $key);
-            $cur_bus = $cur_file[0];
-            $cur_route = $cur_file[1];
-            $cur_day = $cur_file[2];
-            if (array_search(re($stop), $this->AllStopsByRoute($cur_bus, $cur_route, $cur_day)))
-                array_push($bus_array, $cur_bus);
+            if (array_search(re($stop), $this->AllStopsByRoute($cur_file[0], $cur_file[1], $cur_file[2])))
+                array_push($bus_array, $cur_file[0]);
         }
         return array_unique($bus_array);
 
@@ -263,6 +263,12 @@ class StopTime
         return $this->Stop;
     }
 
+    private function GetTime($DayType){
+        if ($DayType === "Выходной" ) return $this->GetDayOffTime();
+        else return $this->GetWorkTime();
+
+    }
+
     public function GetWorkTime()
     {
         return $this->WorkTime->GetTimeArray();
@@ -271,6 +277,13 @@ class StopTime
     public function GetDayOffTime()
     {
         return $this->DayOffTime->GetTimeArray();
+    }
+
+    private function GetTypeOfDayNow()
+    {
+        global $t;
+        if ((date('N', $t) >= 6)) return "Выходной";
+        else return "Рабочий";
     }
 
     public function GetClosestTime($requested_time, $type, $shift)
@@ -286,12 +299,12 @@ class StopTime
         $error = 1; // тек. 16:47 автобус 16:44 - выведет 16:44, а не след
         while ($offset == INF && $counter < 7) {
 
-            if ($bus == "33" && ((date('N', $t) + $counter) % 7 == 0)) $counter++; //придумать фикс для 33
-            if ($time_array = found_by_stop_by_date($bus, $route, $stop, $counter))
+            //if ($bus == "33" && ((date('N', $t) + $counter) % 7 == 0)) $counter++; //придумать фикс для 33
+            if ($time_array = $this->GetTime($this->GetTypeOfDayNow()))
                 foreach ($time_array as $key) {
-                    if (convert_time($key) - convert_time($requested_time) <= $offset && convert_time($key) >= (convert_time($requested_time) - $error * 60)  ) {
+                    if ($this->convert_time($key) - $this->convert_time($requested_time) <= $offset && $this->convert_time($key) >= ($this->convert_time($requested_time) - $error * 60)  ) {
                         $offset_return = $key;
-                        $offset = convert_time($key) - convert_time($requested_time);
+                        $offset = $this->convert_time($key) - $this->convert_time($requested_time);
                         break;
                     }
                 }
@@ -309,6 +322,11 @@ class StopTime
         $shift_mes = "";
         if ($counter != 0) $shift_mes = $shift_array[$counter];
         return $offset_return . $shift_mes;
+    }
+    private function convert_time($time)
+    { //returns time in seconds
+
+        return strtotime("1970-01-01 $time UTC");
     }
 
 }
@@ -336,44 +354,45 @@ class DecodeMessage{
     
     private $responseForMessage;
     private $t;
+    private $data;
 
     function __construct()
     {
-        $data = new Data();
+        $this->data = new Data();
         $this->t = time();
 
-        switch ($data->GetDataType()) {
+        switch ($this->data->GetDataType()) {
             case 'message_new':
-                $user = new User($data->GetUserID());
-                $token = '512459e4b869fb4271ddd9b2010cb747167e6e3bbc97b6ff0ff4ff11a41acee2e84b83ca0a91dd5470e52';
+                $user = new User($this->data->GetUserID());
+                global $token;
                 $this->responseForMessage = new Message($token, "5.62");
 
 
-                if ($data->GetUserMessage() == 'кинь музыку') {
-                    $this->responseForMessage->SendMessage('Держи!',$data->GetUserID(), 'audio179667459_456239214', true);
+                if ($this->data->GetUserMessage() == 'кинь музыку') {
+                    $this->responseForMessage->SendMessage('Держи!',$this->data->GetUserID(), 'audio179667459_456239214', true);
                     break;
                 }
-                if ($data->GetUserMessage() == 'кинь мем') {
+                if ($this->data->GetUserMessage() == 'кинь мем') {
                     $memes = array("_456239018", "_456239021", "_456239022", "_456239023", "_456239024", "_456239025");
-                    $this->responseForMessage->SendMessage('Мемыыыы, наканецтааааа', $data->GetUserID(), 'photo-139467761' . $memes[array_rand($memes)], true);
+                    $this->responseForMessage->SendMessage('Мемыыыы, наканецтааааа', $this->data->GetUserID(), 'photo-139467761' . $memes[array_rand($memes)], true);
                     break;
                 }
 
-                if (strpos($data->GetUserMessage(), 'остановки') !== false){
-                    $bus = new Transport($this->RemoveKeyWord("остановки", $data->GetUserMessage()));
-                    $this->responseForMessage->SendMessage(implode(", ", $bus->GetAllStops()), $data->GetUserID(), null, true);
+                if (strpos($this->data->GetUserMessage(), 'остановки') !== false){
+                    $bus = new Transport($this->RemoveKeyWord("остановки", $this->data->GetUserMessage()));
+                    $this->responseForMessage->SendMessage(implode(", ", $bus->GetAllStops()), $this->data->GetUserID(), null, true);
                     break;
                 }
-                if (strpos($data->GetUserMessage(), 'транспорт') !== false){
-                    $stop = new Stop(RemoveKeyWord("транспорт", $data->GetUserMessage()));
-                    $this->responseForMessage->SendMessage(implode(", ", $stop->GetSTransport()), $data->GetUserID(), null, true);
+                if (strpos($this->data->GetUserMessage(), 'транспорт') !== false){
+                    $stop = new Stop(RemoveKeyWord("транспорт", $this->data->GetUserMessage()));
+                    $this->responseForMessage->SendMessage(implode(", ", $stop->GetSTransport()), $this->data->GetUserID(), null, true);
                     break;
                 }
-                if ((count($current = explode(' ', $data->GetUserMessage())) >= 2) && $data->GetUserMessage() == "") {
-                    $this->responseForMessage->SendMessage(BuStopResp($this->SortRightWay($current)), $data->GetUserID(), null, true);
+                if ((count($current = explode(' ', $this->data->GetUserMessage())) >= 2) ) {
+                    $this->responseForMessage->SendMessage($this->BuStopResp($this->SortRightWay($current)), $this->data->GetUserID(), null, true);
                 }
 
-                $this->responseForMessage->SendMessage("Если нужна помощь, напиши: помощь", $data->GetUserID(), null, true);
+                //$this->responseForMessage->SendMessage("Если нужна помощь, напиши: помощь", $this->data->GetUserID(), null, true);
 
 
 
@@ -381,10 +400,10 @@ class DecodeMessage{
     }
 
 
-    function try_to_find_stop($stop, $bus)
+    private function try_to_find_stop($stop, $bus)
     {
 
-        $stops_low = array_map('mb_strtolower', all_stops($bus));
+        $stops_low = array_map('mb_strtolower', $bus->GetAllStops());
 
         $found_res = array_filter($stops_low, function ($el) use ($stop) {
             return (mb_strpos($el, $stop) !== false);//удаляем все что не подходит
@@ -397,7 +416,7 @@ class DecodeMessage{
 
     }
 
-    function RemoveKeyWord($keyword,$message){
+     private function RemoveKeyWord($keyword,$message){
 
         if ($message == "" || $keyword == "" ) return 0;
         $message = str_replace($keyword,"",$message);
@@ -406,7 +425,7 @@ class DecodeMessage{
         return implode(" ", $fragments);
 
     }
-    function SortRightWay($message_ex){
+    private function SortRightWay($message_ex){
         $bus_array = array_map('mb_strtolower', array(1,"2","3","5","6","7","8","9","10","11","12","13","14","16","17","18","19","20","21","22","23","24","25","26","27","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","11А","12А","13А","15А","15Б","15В","1А","1Т","21А","21Б","23А","23Б","24А","2А","2Т","37А","39А","39Б","3Т","44А","4Т","5Т","6Т","7Т","8Т"));
 
         foreach($message_ex as $key=>$value){
@@ -421,27 +440,21 @@ class DecodeMessage{
 
     }
 
-    function type_of_day_rus_now()
+    private function type_of_day_rus_now()
     {
         global $t;
         if ((date('N', $t) >= 6)) return "Выходной";
         else return "Рабочий";
     }
 
-    function convert_time($time)
-    { //returns time in seconds
 
-        return strtotime("1970-01-01 $time UTC");
-    }
 
-    function GetUpperStopName($bus, $stop)
+    private function GetUpperStopName($bus, $stop)
     {
         if ($stop === "multiple") return $stop;
-        $all_stops_for_bus = all_stops($bus);
-        //SendMessage("зашли", false);
+        $all_stops_for_bus = $bus->GetAllStops();
         foreach ($all_stops_for_bus as $key) {
             if (mb_strtolower($key) == $stop) {
-                //SendMessage("нашли" . $key, false);
                 return $key;
             }
         }
@@ -450,34 +463,29 @@ class DecodeMessage{
 
     public function BuStopResp ($current){
 
-        if (get_route(mb_strtoupper($current[0]), "Туда")) {
-            //дописать проверку пар
-            $normal_stop = "";
             $rasp_checker = "";
             $bus = new Transport($current[0]);
-            $current_bus = $bus->GetBusName();
 
-            $current_date = date("G:i", $this->t);
+            $current_date = date("G:i", $this->t); // сечас время
 
-            if (end($current) == "расписание")
+            if (end($current) == "расписание") //чекаем на запрос расписания, если да выкидываем
                 $rasp_checker = array_pop($current);
-            if (strpos(end($current), ":")!== false)
+            if (strpos(end($current), ":")!== false) // чекаем на время в конце запроса
                 $current_date = array_pop($current);
-            if ($normal_stop = $this->try_to_find_stop(mb_strtolower(implode(" ", array_slice($current, 1))), $current_bus)) $normal_stop = $this->GetUpperStopName($current_bus, $normal_stop);
-            if ($normal_stop !== "multiple"  && check_one_stop($current_bus, "Туда", $normal_stop)) {
-                $request_params = "";
-                $rasp = 0;
-                $shift = 0;
-
+            if ($normal_stop = $this->try_to_find_stop(mb_strtolower(implode(" ", array_slice($current, 1))), $bus)) $normal_stop = $this->GetUpperStopName($bus, $normal_stop);
+            if ($normal_stop !== "multiple"  /*&& check_one_stop($current_bus, "Туда", $normal_stop)*/) {
+                $message = ""; // ответ
+                $rasp = 0; // получитть расписание
+                $shift = 0; // сдвиг по дням
                 if ($rasp_checker == "расписание") $rasp = 1; //проверка на одно направление, чиститм чтобы мусора не было, ибо добавляем в строку, а не присваеваем
-                if ($time = closest_time_new($current_bus, "Туда", $normal_stop, $current_date, $rasp, $shift))
-                    $request_params = $current_bus . ". " . get_route($current_bus, "Туда") . " на остановке " . $normal_stop . " будет в " . $time . "\n";
-                if ($time = closest_time_new($current_bus, "Обратно", $normal_stop, $current_date, $rasp, $shift))
-                    $request_params .= $current_bus . ". " . get_route($current_bus, "Обратно") . " на остановке " . $normal_stop . " будет в " . $time;
-                return $request_params;
+                if ($time = $bus->GetTransportStops()->GetForwardStop($normal_stop)->GetClosestTime($current_date, $rasp, $shift))
+                    $message = $bus->GetBusName() . ". " . $bus->GetRouteForward() . " на остановке " . $normal_stop . " будет в " . $time . "\n";
+                if ($time = $bus->GetTransportStops()->GetBackStop($normal_stop)->GetClosestTime($current_date, $rasp, $shift)   )
+                    $message .= $bus->GetBusName() . ". " . $bus->GetRouteBack() . " на остановке " . $normal_stop . " будет в " . $time;
+                return $message;
             }
 
-        }
+
         return "";
     }
 
@@ -500,7 +508,7 @@ class Message{
             'access_token' => $this->token,
             'v' => $this->version
         );
-        if ($attachment != null)
+        if ($attachment == null)
             $request_params['message'] = $text;
         else
             throw new Exception("Message text is null");
@@ -510,6 +518,7 @@ class Message{
 
         file_get_contents('https://api.vk.com/method/messages.send?' . http_build_query($request_params));
         if ($okFlag) echo('ok');
+        //echo "<br>", $text;
 
     }
 
@@ -549,10 +558,4 @@ class PreviousMessages extends Message {
 
 }
 
-        $bus = new Transport("17");
-        echo implode(" - ", $bus->GetRouteForward()), "<br>";
-        echo implode(", ", $bus->GetStopsForward()), "<br>";
-        echo implode(" - ", $bus->GetRouteBack()), "<br>";
-        echo implode(", ", $bus->GetStopsBack()), "<br>";
-
-        echo implode(", ", $bus->GetTransportStops()->GetBackStop("Зубачева")->GetWorkTime());
+new DecodeMessage();
