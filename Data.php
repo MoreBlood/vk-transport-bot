@@ -7,6 +7,7 @@
  * Time: 0:46
  */
 date_default_timezone_set("Europe/Minsk");
+$t = time();
 include 'tr.php';
 include 'api.php';
 
@@ -16,23 +17,24 @@ function re ($str){
 
 class Data
 {
-    private $DataObject = NULL;
-    private $UserID = NULL;
-    private $UserMessage = NULL;
-    private $type = NULL;
+    private $DataObject;
+    private $UserID;
+    private $UserMessage;
+    private $type;
 
-    function __construct()
+    function __construct($message)
     {
 
         //$data = file_get_contents('php://input');
         $data = file_get_contents('Data.json');
+
 
         if ($data == FALSE)
             throw new Exception('Data input is empty');
         else {
             $this->DataObject = json_decode($data);
             $this->UserID = $this->DataObject->object->user_id;
-            $this->UserMessage = (mb_strtolower($this->DataObject->object->body));
+            $this->UserMessage = mb_strtolower($message); /*(mb_strtolower($this->DataObject->object->body))*/;
             $this->type = $this->DataObject->type;
         }
 
@@ -45,41 +47,24 @@ class Data
 
     public function GetUserID()
     {
-
-        if ($this->UserID == NULL) {
-            return "empty";
-        } else
-            return $this->UserID;
-
+        return $this->UserID;
     }
 
     public function GetUserMessage()
     {
-        if ($this->UserMessage == NULL) {
-            return "empty";
-        } else
-            return $this->UserMessage;
-
+        return $this->UserMessage;
     }
 
     public function GetDataType()
     {
-        if ($this->UserMessage == NULL) {
-            return "empty";
-        } else
-            return $this->type;
-
+        return $this->type;
     }
 
     public function IsMessageSticker()
     {
-        if ($this->DataObject == NULL)
-            throw new Exception('DataObject is null');
-        else
-            if (isset($this->DataObject->object->attachments))
-                return $this->DataObject->object->attachments[0]->type == "sticker" ? true : false;
+        if (isset($this->DataObject->object->attachments))
+            return $this->DataObject->object->attachments[0]->type == "sticker" ? true : false;
             else return false;
-
     }
 }
 class User{
@@ -88,6 +73,8 @@ class User{
     function __construct($user_id)
     {
         $data = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$user_id}&v=5.0&lang=0"));
+        if ($data == FALSE || isset($data->error))
+            throw new Exception('VK API ERROR: ' . $data->error->error_msg);
         $this->firstName = $data->response[0]->first_name;
         $this->lastName = $data->response[0]->last_name;
     }
@@ -99,7 +86,6 @@ class User{
         return $this->lastName;
     }
 }
-
 class Transport{
 
     private $TransportName;
@@ -146,7 +132,6 @@ class Transport{
 
 
 }
-
 class TransportStops{
     private $Forward = array();
     private $Back = array();
@@ -160,7 +145,7 @@ class TransportStops{
     private function GetAllStops($name, $route, $day){
         $data= @file_get_contents('bus/' . $name . '.' . $route . '.' . $day . '.json');
         if ($data !== FALSE) return array_keys(json_decode($data, true));
-        //else return array("Нет такого транспорта");
+        else throw new Exception("Остановка только в одном направлении");
     }
 
     private function CreateMap($stops, $transportName, $route){
@@ -185,6 +170,8 @@ class TransportStops{
     public function GetForwardStop($stopName){
 
         return $this->pGetStop($this->Forward, $stopName);
+
+
         //тут будут ошибки
     }
 
@@ -197,19 +184,21 @@ class TransportStops{
         foreach ($route as $stopTime){
             if ($stopTime->GetStop()->GetStopName() == $stopName) return $stopTime;
         }
+         throw new Exception("No stop on this route");
     }
 
 
 }
-
 class Stop{
     private $StopName;
     private $Transport;
+    private $AllStops;
 
 
     function __construct($stopName)
     {
         $this->StopName = $stopName;
+        $this->AllStops = $this->GetAllStops();
         $this->Transport = $this->GetAllTransport($stopName);
     }
     public function GetStopName(){
@@ -220,8 +209,9 @@ class Stop{
     }
 
     private function GetAllTransport($stop){
-        if ($stop === 0) return "Нет такой остановки";
+        //if ($stop === 0) return "Нет такой остановки";
         $bus_array = array();
+        $stop = $this->GetUpperName($stop);
 
         $path = array_diff(scandir("bus/"), array('..', '.'));
         foreach ($path as $key){
@@ -241,9 +231,26 @@ class Stop{
 
     }
 
+    private function GetUpperName($stop){
+        if  ($key = array_search($stop, array_map('mb_strtolower',$this->AllStops))) return $this->AllStops[$key];
+        else return false;
+    }
+
+    private function GetAllStops (){
+        $data = array();
+
+        $path = array_diff(scandir("bus/"), array('..', '.'));
+        foreach ($path as $key=>$file){
+            $rasp = json_decode(@file_get_contents('bus/'.$file), true);
+            $data = array_merge($data, array_keys($rasp));
+
+        }
+
+        return array_unique($data);
+    }
+
 
 }
-
 class StopTime
 {
 
@@ -279,10 +286,10 @@ class StopTime
         return $this->DayOffTime->GetTimeArray();
     }
 
-    private function GetTypeOfDayNow()
+    private function GetTypeOfDayNow($shift)
     {
         global $t;
-        if ((date('N', $t) >= 6)) return "Выходной";
+        if (((date('N', $t)+$shift)%7 >= 6)) return "Выходной";
         else return "Рабочий";
     }
 
@@ -300,7 +307,7 @@ class StopTime
         while ($offset == INF && $counter < 7) {
 
             //if ($bus == "33" && ((date('N', $t) + $counter) % 7 == 0)) $counter++; //придумать фикс для 33
-            if ($time_array = $this->GetTime($this->GetTypeOfDayNow()))
+            if ($time_array = $this->GetTime($this->GetTypeOfDayNow($counter)))
                 foreach ($time_array as $key) {
                     if ($this->convert_time($key) - $this->convert_time($requested_time) <= $offset && $this->convert_time($key) >= ($this->convert_time($requested_time) - $error * 60)  ) {
                         $offset_return = $key;
@@ -330,8 +337,6 @@ class StopTime
     }
 
 }
-
-
 class Time{
     private $TimeArray;
 
@@ -349,56 +354,57 @@ class Time{
     }
 
 }
-
 class DecodeMessage{
     
     private $responseForMessage;
     private $t;
     private $data;
 
-    function __construct()
+    function __construct($message)
     {
-        $this->data = new Data();
-        $this->t = time();
 
-        switch ($this->data->GetDataType()) {
-            case 'message_new':
-                $user = new User($this->data->GetUserID());
-                global $token;
-                $this->responseForMessage = new Message($token, "5.62");
+            $this->data = new Data($message);
+            $this->t = time();
 
+            switch ($this->data->GetDataType()) {
+                case 'message_new':
+                    try {
+                        $user = new User($this->data->GetUserID());
+                    } catch (Exception $E) {
+                        if ($E->getMessage() == "VK API ERROR: Invalid user id") echo "kek";
+                    }
+                    global $token;
+                    $this->responseForMessage = new Message($token, "5.62");
 
-                if ($this->data->GetUserMessage() == 'кинь музыку') {
-                    $this->responseForMessage->SendMessage('Держи!',$this->data->GetUserID(), 'audio179667459_456239214', true);
-                    break;
-                }
-                if ($this->data->GetUserMessage() == 'кинь мем') {
-                    $memes = array("_456239018", "_456239021", "_456239022", "_456239023", "_456239024", "_456239025");
-                    $this->responseForMessage->SendMessage('Мемыыыы, наканецтааааа', $this->data->GetUserID(), 'photo-139467761' . $memes[array_rand($memes)], true);
-                    break;
-                }
-
-                if (strpos($this->data->GetUserMessage(), 'остановки') !== false){
-                    $bus = new Transport($this->RemoveKeyWord("остановки", $this->data->GetUserMessage()));
-                    $this->responseForMessage->SendMessage(implode(", ", $bus->GetAllStops()), $this->data->GetUserID(), null, true);
-                    break;
-                }
-                if (strpos($this->data->GetUserMessage(), 'транспорт') !== false){
-                    $stop = new Stop(RemoveKeyWord("транспорт", $this->data->GetUserMessage()));
-                    $this->responseForMessage->SendMessage(implode(", ", $stop->GetSTransport()), $this->data->GetUserID(), null, true);
-                    break;
-                }
-                if ((count($current = explode(' ', $this->data->GetUserMessage())) >= 2) ) {
-                    $this->responseForMessage->SendMessage($this->BuStopResp($this->SortRightWay($current)), $this->data->GetUserID(), null, true);
-                }
-
+                    if ($this->data->GetUserMessage() == 'кинь музыку') {
+                        $this->responseForMessage->SendMessage('Держи! ' . $user->GetFN(), $this->data->GetUserID(), 'audio179667459_456239214', true);
+                        break;
+                    }
+                    if ($this->data->GetUserMessage() == 'кинь мем') {
+                        $memes = array("_456239018", "_456239021", "_456239022", "_456239023", "_456239024", "_456239025");
+                        $this->responseForMessage->SendMessage('Мемыыыы, наканецтааааа', $this->data->GetUserID(), 'photo-139467761' . $memes[array_rand($memes)], true);
+                        break;
+                    }
+                    if (strpos($this->data->GetUserMessage(), 'остановки') !== false) {
+                        $bus = new Transport($this->RemoveKeyWord("остановки", $this->data->GetUserMessage()));
+                        $this->responseForMessage->SendMessage(implode(", ", $bus->GetAllStops()), $this->data->GetUserID(), null, true);
+                        break;
+                    }
+                    if (strpos($this->data->GetUserMessage(), 'транспорт') !== false) {
+                        $stop = new Stop(($this->RemoveKeyWord("транспорт", $this->data->GetUserMessage())));//перевод в нормальное состояние
+                        $this->responseForMessage->SendMessage(implode(", ", $stop->GetSTransport()), $this->data->GetUserID(), null, true);
+                        break;
+                    }
+                    if ((count($current = explode(' ', $this->data->GetUserMessage())) >= 2)) {
+                        try{
+                            $this->responseForMessage->SendMessage($this->BuStopResp($this->SortRightWay($current)), $this->data->GetUserID(), null, true);
+                        }catch (Exception $exception){
+                            echo $exception->getMessage();
+                        }
+                    }
                 //$this->responseForMessage->SendMessage("Если нужна помощь, напиши: помощь", $this->data->GetUserID(), null, true);
-
-
-
-        }
+            }
     }
-
 
     private function try_to_find_stop($stop, $bus)
     {
@@ -410,9 +416,8 @@ class DecodeMessage{
         });
 
         if (count($found_res) == 1) {
-            //SendMessage("нашли по части " . implode(", ", $found_res), false);
             return implode("", $found_res);
-        } else return 0;
+        } else throw new Exception("No such stop");
 
     }
 
@@ -426,17 +431,17 @@ class DecodeMessage{
 
     }
     private function SortRightWay($message_ex){
-        $bus_array = array_map('mb_strtolower', array(1,"2","3","5","6","7","8","9","10","11","12","13","14","16","17","18","19","20","21","22","23","24","25","26","27","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","11А","12А","13А","15А","15Б","15В","1А","1Т","21А","21Б","23А","23Б","24А","2А","2Т","37А","39А","39Б","3Т","44А","4Т","5Т","6Т","7Т","8Т"));
+        $bus_array = array_map('mb_strtolower', array("1","2","3","5","6","7","8","9","10","11","12","13","14","16","17","18","19","20","21","22","23","24","25","26","27","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","11А","12А","13А","15А","15Б","15В","1А","1Т","21А","21Б","23А","23Б","24А","2А","2Т","37А","39А","39Б","3Т","44А","4Т","5Т","6Т","7Т","8Т"));
 
         foreach($message_ex as $key=>$value){
             if (array_search($value, $bus_array)){
                 array_unshift($message_ex, $value);
                 unset($message_ex[$key+1]);
                 $message_ex = array_merge($message_ex);
-                break;
+                return $message_ex;
             }
         }
-        return $message_ex;
+        throw new Exception("No bus");
 
     }
 
@@ -447,18 +452,28 @@ class DecodeMessage{
         else return "Рабочий";
     }
 
-
-
-    private function GetUpperStopName($bus, $stop)
+    private function GetUpperStopNameByBus($bus, $stop)
     {
-        if ($stop === "multiple") return $stop;
+        if ($stop === "multiple") return $stop; // ситуациия с ленина
         $all_stops_for_bus = $bus->GetAllStops();
         foreach ($all_stops_for_bus as $key) {
             if (mb_strtolower($key) == $stop) {
                 return $key;
             }
         }
-        return 0;
+        throw new Exception("No such stop");
+    }
+
+    private function GetUpperStopName($bus, $stop)
+    {
+        if ($stop === "multiple") return $stop; // ситуациия с ленина
+        $all_stops_for_bus = $bus->GetAllStops();
+        foreach ($all_stops_for_bus as $key) {
+            if (mb_strtolower($key) == $stop) {
+                return $key;
+            }
+        }
+        throw new Exception("No such stop");
     }
 
     public function BuStopResp ($current){
@@ -472,25 +487,35 @@ class DecodeMessage{
                 $rasp_checker = array_pop($current);
             if (strpos(end($current), ":")!== false) // чекаем на время в конце запроса
                 $current_date = array_pop($current);
-            if ($normal_stop = $this->try_to_find_stop(mb_strtolower(implode(" ", array_slice($current, 1))), $bus)) $normal_stop = $this->GetUpperStopName($bus, $normal_stop);
-            if ($normal_stop !== "multiple"  /*&& check_one_stop($current_bus, "Туда", $normal_stop)*/) {
+            try{
+                if ($normal_stop = $this->try_to_find_stop(mb_strtolower(implode(" ", array_slice($current, 1))), $bus)) $normal_stop = $this->GetUpperStopNameByBus($bus, $normal_stop);
+            }catch (Exception $exception){
+                echo $exception->getMessage();
+                return;
+            }
+            if ($normal_stop !== "multiple"  /*&& check_one_stop($current_bus, "Туда", $normal_stop)*/) {// ?????????
                 $message = ""; // ответ
                 $rasp = 0; // получитть расписание
                 $shift = 0; // сдвиг по дням
                 if ($rasp_checker == "расписание") $rasp = 1; //проверка на одно направление, чиститм чтобы мусора не было, ибо добавляем в строку, а не присваеваем
-                if ($time = $bus->GetTransportStops()->GetForwardStop($normal_stop)->GetClosestTime($current_date, $rasp, $shift))
-                    $message = $bus->GetBusName() . ". " . $bus->GetRouteForward() . " на остановке " . $normal_stop . " будет в " . $time . "\n";
-                if ($time = $bus->GetTransportStops()->GetBackStop($normal_stop)->GetClosestTime($current_date, $rasp, $shift)   )
-                    $message .= $bus->GetBusName() . ". " . $bus->GetRouteBack() . " на остановке " . $normal_stop . " будет в " . $time;
+                try{
+                    if ($time = $bus->GetTransportStops()->GetForwardStop($normal_stop)->GetClosestTime($current_date, $rasp, $shift))
+                        $message = $bus->GetBusName() . ". " . $bus->GetRouteForward() . " на остановке " . $normal_stop . " будет в " . $time . "\n";
+                }catch (Exception $exception){
+                    echo $exception->getMessage();
+                }
+                try{
+                    if ($time = $bus->GetTransportStops()->GetBackStop($normal_stop)->GetClosestTime($current_date, $rasp, $shift)   )
+                        $message .= $bus->GetBusName() . ". " . $bus->GetRouteBack() . " на остановке " . $normal_stop . " будет в " . $time;
+                }catch (Exception $exception){
+                    echo $exception->getMessage();
+                }
                 return $message;
             }
-
-
         return "";
     }
 
 }
-
 class Message{
     protected $token;
     protected $version;
@@ -508,22 +533,20 @@ class Message{
             'access_token' => $this->token,
             'v' => $this->version
         );
-        if ($attachment == null)
+        if ($text !== null)
             $request_params['message'] = $text;
-        else
-            throw new Exception("Message text is null");
+
         if ($attachment != null)
             $request_params['attachment'] = $attachment;
 
 
-        file_get_contents('https://api.vk.com/method/messages.send?' . http_build_query($request_params));
-        if ($okFlag) echo('ok');
-        //echo "<br>", $text;
+        //file_get_contents('https://api.vk.com/method/messages.send?' . http_build_query($request_params));
+        //if ($okFlag) echo('ok');
+        echo "<br>", str_replace("\n", "<br>",$text);
 
     }
 
 }
-
 class PreviousMessages extends Message {
 
     public function getMessages($author, $count, $type) //если тип 1 то сообщения пользователя
@@ -558,4 +581,7 @@ class PreviousMessages extends Message {
 
 }
 
-new DecodeMessage();
+
+if($_POST['message']){
+    new DecodeMessage($_POST['message']);
+}

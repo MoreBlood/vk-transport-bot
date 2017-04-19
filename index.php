@@ -5,6 +5,13 @@ include 'tr.php';
 date_default_timezone_set("Europe/Minsk");
 $t = time();
 
+function CmpArrayWithStr($array, $str){
+    foreach ($array as $cmp){
+        if ($cmp == $str) return true;
+    }
+    return false;
+}
+
 function getMemes($count, $owner, $album){
 
     $request_params = array(
@@ -69,7 +76,7 @@ function getMessageUsers(){
 
 
 function SortRightWay($message_ex){
-    $bus_array = array_map('mb_strtolower', array(1,"2","3","5","6","7","8","9","10","11","12","13","14","16","17","18","19","20","21","22","23","24","25","26","27","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","11А","12А","13А","15А","15Б","15В","1А","1Т","21А","21Б","23А","23Б","24А","2А","2Т","37А","39А","39Б","3Т","44А","4Т","5Т","6Т","7Т","8Т"));
+    $bus_array = array_map('mb_strtolower', array("1","2","3","5","6","7","8","9","10","11","12","13","14","16","17","18","19","20","21","22","23","24","25","26","27","29","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","46","11А","12А","13А","15А","15Б","15В","1А","1Т","21А","21Б","23А","23Б","24А","2А","2Т","37А","39А","39Б","3Т","44А","4Т","5Т","6Т","7Т","8Т"));
 
     foreach($message_ex as $key=>$value){
         if (array_search($value, $bus_array)){
@@ -234,15 +241,19 @@ function try_to_find_stop($stop, $bus)
 }
 
 function type_of_day_rus_now()
-{
-    global $t;
+{   global $t;
+
+
+
     if ((date('N', $t) >= 6)) return "Выходной";
     else return "Рабочий";
 }
 
 function type_of_day_rus($shift)
 {
+    $aniver = array("01.04","09.04");
     global $t;
+    if (array_search(date("d.m", $t + strtotime('+' . $shift . 'day', strtotime($t))), $aniver)) return "Выходной";
     if ((date('N', $t + strtotime('+' . $shift . 'day', strtotime($t))) >= 6)) return "Выходной";
     else return "Рабочий";
 }
@@ -437,6 +448,38 @@ switch (@$data->type) {
         //...отправляем строку для подтверждения адреса
         echo $confirmation_token;
         break;
+    case 'message_allow':
+        $user_id = $data->object->user_id;
+
+        $request_params = array(
+            'message' => "- Поиск с текущим временем: АВТОБУС ОСТАНОВКА \n - Поиск всех остановок: ОСТАНОВКИ АВТОБУС \n - Расписание на остановке: АВТОБУС ОСТАНОВКА РАСПИСАНИЕ \n- Остановки необязательно дописывать, если части хватает, то выведется ответ \n Примеры: \n остановки 17\n 1Т цум (для троллейбуса допиши Т без пробела!)\n 5 стадион бре расписание\n 17 цум 21:00\n чтобы бот не отвечал добавь _ в любом месте сообщения\nмемы - кинь мем (еще)",
+            'user_id' => $user_id,
+            'access_token' => $token,
+            'v' => '5.62'
+        );
+
+        file_get_contents('https://api.vk.com/method/messages.send?' . http_build_query($request_params));
+
+        //...отправляем строку для подтверждения адреса
+        echo('ok');
+        break;
+    case 'group_join':
+        $user_id = $data->object->user_id;
+        $user_info = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$user_id}&v=5.0&lang=0"));
+        $user_name = $user_info->response[0]->first_name;
+
+        $request_params = array(
+            'message' => "{$user_name}, спасибо за подписку!",
+            'user_id' => $user_id,
+            'access_token' => $token,
+            'v' => '5.62'
+        );
+
+        file_get_contents('https://api.vk.com/method/messages.send?' . http_build_query($request_params));
+
+        //...отправляем строку для подтверждения адреса
+        echo('ok');
+        break;
 
 //Если это уведомление о новом сообщении...
     case 'message_new':
@@ -506,7 +549,16 @@ switch (@$data->type) {
             $request_params['message'] = BuStopResp(SortRightWay($current));
         }
 
-        if ($request_params['message'] == "" ) $request_params['message'] = "Если нужна помощь, напиши: помощь";
+        if(!CmpArrayWithStr(GetLastMessages("bot", 4), "если нужна помощь, напиши: помощь")) {
+            if ($request_params['message'] == "") $request_params['message'] = "Если нужна помощь, напиши: помощь";
+        }
+        $check = array(
+            'start_message_id' => $data->object->id,
+            'peer_id' => $user_id,
+            'access_token' => $token,
+            'v' => '5.62'
+        );
+        file_get_contents('https://api.vk.com/method/messages.markAsRead?' . http_build_query($check));
 
         file_get_contents('https://api.vk.com/method/messages.send?' . http_build_query($request_params));
 
