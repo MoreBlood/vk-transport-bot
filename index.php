@@ -1,7 +1,7 @@
 <?php
 ini_set('always_populate_raw_post_data','-1');
 include 'tr.php';
-//error_reporting(0);
+error_reporting(0);
 
 date_default_timezone_set("Europe/Minsk");
 $t = time();
