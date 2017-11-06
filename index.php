@@ -9,6 +9,7 @@ $t = time();
 $access_token = env('ACCESS_TOKEN');
 $confirmation_token = env('CONFIRMATION_TOKEN');
 $token = env('TOKEN');
+error_log($access_token);
 
 
 function CmpArrayWithStr($array, $str){
