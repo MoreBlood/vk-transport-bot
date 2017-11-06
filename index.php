@@ -1,6 +1,7 @@
 <?php
 include 'api.php';
 include 'tr.php';
+error_reporting(0);
 
 date_default_timezone_set("Europe/Minsk");
 $t = time();
@@ -27,6 +28,142 @@ function getMemes($count, $owner, $album){
     return'photo' . $owner . '_' . $memes->response->items[array_rand($memes->response->items)]->id;
 
 
+}
+
+function getRevisorsFromGroup($time, $count){
+    $request_params = array(
+        'owner_id' => -72869598,
+        'access_token' => 'c0eaa10ec0eaa10ec058dbc2efc0b356c3cc0eac0eaa10e985813a04f1328af3fd75ecb',
+        'count' => $count,
+        'filter' => 'others',
+        'v' => '5.62'
+    );
+
+    $wall = json_decode(file_get_contents('https://api.vk.com/method/wall.get?' . http_build_query($request_params)), true);
+    $clear_text = array();
+    foreach ($wall['response']['items'] as $mess){
+        array_push($clear_text, array('message' => re(mb_strtolower($mess['text'])), 'time' => $mess['date']));
+    }
+
+    if ($clear_text) $clear_text = array_filter($clear_text, function ($obj) use ($time) {
+        if ((time() - $obj['time']) < $time && !(MultipleSearchInString($obj['message'], array("нет", "нету", "?", "никого", "где", "есть кто", "чисто","до", "как", "дармоеды", "гады","ничего", "давайте", "будем","фоткать", "народ","люди")))) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+    );
+
+    $final_mes = array();
+
+    foreach ($clear_text as $ms){
+        $ms['message'] = remove_emoji(DeleteTrash($ms['message'], array("еще", "стоят", ".", " .", "!","написать сообщение","собаки","опять","проверяют","не проверяют")));
+       array_push($final_mes,my_mb_ucfirst($ms['message']) . " (" . round((time() - $ms['time']) / 60) . " мин)");
+    }
+
+    if (!count($final_mes)) $final_mes[0] = "В последний час не было замечено контроля";
+    return implode("\n", $final_mes) . "\nНа основе сообщений пользователей группы vk.com/kontroler_brest";
+}
+
+function getStopFromMessage($object){
+
+}
+
+function remove_emoji($text){
+    return preg_replace('/([0-9|#][\x{20E3}])|[\x{00ae}|\x{00a9}|\x{203C}|\x{2047}|\x{2048}|\x{2049}|\x{3030}|\x{303D}|\x{2139}|\x{2122}|\x{3297}|\x{3299}][\x{FE00}-\x{FEFF}]?|[\x{2190}-\x{21FF}][\x{FE00}-\x{FEFF}]?|[\x{2300}-\x{23FF}][\x{FE00}-\x{FEFF}]?|[\x{2460}-\x{24FF}][\x{FE00}-\x{FEFF}]?|[\x{25A0}-\x{25FF}][\x{FE00}-\x{FEFF}]?|[\x{2600}-\x{27BF}][\x{FE00}-\x{FEFF}]?|[\x{2900}-\x{297F}][\x{FE00}-\x{FEFF}]?|[\x{2B00}-\x{2BF0}][\x{FE00}-\x{FEFF}]?|[\x{1F000}-\x{1F6FF}][\x{FE00}-\x{FEFF}]?/u', '', $text);
+}
+
+function my_mb_ucfirst($str) {
+    $fc = mb_strtoupper(mb_substr($str, 0, 1));
+    return $fc.mb_substr($str, 1);
+}
+
+function MultipleSearchInString($string, $needles){
+    foreach ($needles as $needle){
+        if (strpos($string, $needle) !==false) return true;
+    }
+    return false;
+}
+function DeleteTrash($string, $needles){
+    foreach ($needles as $needle){
+        $string = str_replace($needle,"", $string);
+    }
+    return $string;
+}
+
+function addRevisors($stop)
+{
+
+    global $user_id;
+
+    $stopsObject = array();
+
+    $json = json_decode(file_get_contents("revisors.json"), true);
+
+    if ($json) $stopsObject = $json;
+
+    $new_stop = array(
+        'stop' => $stop,
+        'time' => time(),
+        'ids' => array($user_id)
+    );
+
+    if ($stopsObject) $stopsObject = array_filter($stopsObject, function ($obj) use ($stop) {
+        if ((time() - $obj['time']) < 3600) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+    );
+
+    $b = false;
+
+    for ($i = 0; $i < count($stopsObject); $i++) {
+        if ($stopsObject[$i]['stop'] === $stop) {
+            if (!in_array($user_id, $stopsObject[$i]['ids'])) {
+                array_push($stopsObject[$i]['ids'], $user_id);
+            }
+            $stopsObject[$i]['time'] = time();
+            $b = true;
+        }
+    }
+    if (!$b) array_push($stopsObject, $new_stop);
+
+    $myfile = fopen("revisors.json", "w") or die("Unable to open file!");
+
+    fwrite($myfile, json_encode($stopsObject));
+    fclose($myfile);
+
+
+}
+
+function ClearRevisors()
+{
+
+    global $user_id;
+
+    if ($user_id !== 179667459 && $user_id !== 50259075) return 0;
+
+    $myfile = fopen("revisors.json", "w") or die("Unable to open file!");
+
+    fwrite($myfile, "");
+    fclose($myfile);
+
+    return 1;
+
+}
+
+function getRevisors()
+{
+    $stopsObject = json_decode(file_get_contents("revisors.json"), true);
+    $stops = array();
+
+    if ($stopsObject) foreach ($stopsObject as $el) {
+        if ((time() - $el['time']) < 3600) {
+            array_push($stops, $el['stop'] . " (" . round((time() - $el['time']) / 60) . " минут назад, отметили: " . count($el['ids']) . " чел.)");
+        }
+    }
+    if (!$stops) return "Контролеров нигде нет :)\nЛибо их просто не отметили\nПробей лучше талон";
+    return implode("\n", $stops);
 }
 
 function getUsers($id){
@@ -222,7 +359,7 @@ function try_to_find_stop($stop, $bus)
     if (in_array($stop, $stops_low)) return $stop;
 
     $found_res = array_filter($stops_low, function ($el) use ($stop) {
-        return (mb_strpos($el, $stop) !== false);//удаляем все что не подходит
+        return (  @mb_strpos($el, $stop) !== false);//удаляем все что не подходит
     });
 
 
@@ -251,7 +388,7 @@ function type_of_day_rus_now()
 
 function type_of_day_rus($shift)
 {
-    $aniver = array("01.04","09.04");
+    $aniver = array("01.01", "07.01", "08.03", "01.05", "08.05", "09.05", "03.07", "07.11", "25.12");
     global $t;
     if (array_search(date("d.m", $t + strtotime('+' . $shift . 'day', strtotime($t))), $aniver)) return "Выходной";
     if ((date('N', $t + strtotime('+' . $shift . 'day', strtotime($t))) >= 6)) return "Выходной";
@@ -491,6 +628,8 @@ switch (@$data->type) {
 //и извлекаем из ответа его имя
         $user_name = $user_info->response[0]->first_name;
         $user_message = re(mb_strtolower($data->object->body));
+        $user_fwd_message = re(mb_strtolower(@$data->object->fwd_messages[0]->body));//первое пересылаемое сообщение, если текст сообщения пустой
+        if ($user_message == ""  && $user_fwd_message) $user_message = $user_fwd_message;
         $response_for_message = "";
 
         $found_res = array_filter($stops_low, function ($el) use ($user_message) {
@@ -530,19 +669,46 @@ switch (@$data->type) {
         if (strpos($user_message, 'спасибо') !== false || $user_message == 'спс' || $user_message == 'красава') $request_params['message'] = "Пожалуйста, {$user_name} 😌";
         if (strpos($user_message, 'как дела') !== false || $user_message == 'как сам?') $request_params['message'] = "Все отлично, а ты как, {$user_name}?";
         if ($user_message == 'нормально' || $user_message == 'хорошо' || $user_message == 'збс' || $user_message == 'отлично' || $user_message == 'норм') $request_params['message'] = "Круто!";
-        if ($user_message == 'time') $request_params['message'] = type_of_day_rus_now();
+        if ($user_message == 'time') $request_params['message'] = type_of_day_rus_now() .' ' . date('H:m',time());
         if ($user_message == 'помощь' || $user_message == 'что ты умеешь') $request_params['message'] = "Что я умею: \n - Поиск с текущим временем: АВТОБУС ОСТАНОВКА \n - Поиск всех остановок: ОСТАНОВКИ АВТОБУС \n - Расписание на остановке: АВТОБУС ОСТАНОВКА РАСПИСАНИЕ \n- Остановки необязательно дописывать, если части хватает, то выведется ответ \n Примеры: \n остановки 17\n 1Т цум (для троллейбуса допиши Т без пробела!)\n 5 стадион бре расписание\n 17 цум 21:00\n чтобы бот не отвечал добавь _ в любом месте сообщения\nмемы - кинь мем (еще)";
-        if ($user_message == 'ты пидор') $request_params['message'] = "Только пидора могли назвать таким именем -  {$user_name}. ";
+        if (strpos($user_message, 'пидор') !== false) $request_params['message'] = "Только пидора могли назвать таким именем -  {$user_name}. ";
         if (strpos($user_message, 'кто тебя ') !== false) $request_params['message'] = "Authors: \nvk.com/googlebox - code, idea\nvk.com/evgen_vagabund  - database, debug ";
         //if ($user_message == 'да' && substr_count($messages_history_bot[0], ',') != 0) $request_params['message'] = "Что значит да?";
         if ($data->object->attachments[0]->type == "sticker") {
-            $request_params['message'] = "Классный стикер, жаль я не умею их кидать :(";
+            $request_params['message'] = "Классный стикер, жаль я не умею их кидать 😈";
             //$request_params['sticker_id'] = "12";
         }
         if (strpos($user_message, 'остановки') !== false) $request_params['message'] = implode(", ", all_stops(mb_strtoupper(RemoveKeyWord("остановки", $user_message))));
         if (strpos($user_message, 'транспорт') !== false){
 
             $request_params['message'] = answer_for_bus_stop(try_to_find_from_all(RemoveKeyWord("транспорт", $user_message)),"Туда", type_of_day_rus_now());
+        }
+        /*if (strpos($user_message, 'контролеры') !== false && strpos($user_message, 'где контролеры') == false) {
+            $current_stop = try_to_find_from_all(RemoveKeyWord("контролеры", $user_message));
+            if ($current_stop) {
+                addRevisors($current_stop);
+                $request_params['message'] = 'Добавили контролеров на остановке: ' . $current_stop;
+            }
+
+        }*/
+        if (MultipleSearchInString($user_message, array("контролеры", "контра", "контроль", "ревизоры"))) {
+            $request_params['message'] = getRevisorsFromGroup(3600, 20);
+        }
+        if (MultipleSearchInString($user_message, array("short"))){
+
+            $short = array(
+                'url' => DeleteTrash($user_message, array('short ')),
+                'access_token' => $token,
+                'private' => 0,
+                'v' => '5.62'
+            );
+            $request_params['message'] = json_decode(file_get_contents('https://api.vk.com/method/utils.getShortLink?' . http_build_query($short)), true)['response']['short_url'];
+        }
+
+        if (strpos($user_message, 'clearrev') !== false) {
+            if (ClearRevisors())
+            $request_params['message'] = "Revisors cleared!";
+            else $request_params['message'] = "Permissions denied!";
         }
         if ((count($current = explode(' ', $user_message)) >= 2) && $request_params['message'] == "") {
 

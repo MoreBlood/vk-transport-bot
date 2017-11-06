@@ -72,11 +72,11 @@ class User{
     private $lastName;
     function __construct($user_id)
     {
-        $data = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$user_id}&v=5.0&lang=0"));
+        /*$data = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$user_id}&v=5.0&lang=0"));
         if ($data == FALSE || isset($data->error))
             throw new Exception('VK API ERROR: ' . $data->error->error_msg);
         $this->firstName = $data->response[0]->first_name;
-        $this->lastName = $data->response[0]->last_name;
+        $this->lastName = $data->response[0]->last_name;*/
     }
 
     public function GetFN(){
