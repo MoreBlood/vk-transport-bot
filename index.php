@@ -6,9 +6,9 @@ error_reporting(0);
 date_default_timezone_set("Europe/Minsk");
 $t = time();
 
-$access_token = getenv('ACCESS_TOKEN');
-$confirmation_token = getenv('CONFIRMATION_TOKEN');
-$token = getenv('TOKEN');
+$access_token = env('ACCESS_TOKEN');
+$confirmation_token = env('CONFIRMATION_TOKEN');
+$token = env('TOKEN');
 
 
 function CmpArrayWithStr($array, $str){
