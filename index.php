@@ -1,10 +1,14 @@
 <?php
-include 'api.php';
 include 'tr.php';
 error_reporting(0);
 
 date_default_timezone_set("Europe/Minsk");
 $t = time();
+
+$access_token = getenv('ACCESS_TOKEN');
+$confirmation_token = getenv('CONFIRMATION_TOKEN');
+$token = getenv('TOKEN');
+
 
 function CmpArrayWithStr($array, $str){
     foreach ($array as $cmp){
@@ -18,7 +22,7 @@ function getMemes($count, $owner, $album){
     $request_params = array(
         'owner_id' => $owner,
         'album_id' => $album,
-        'access_token' => 'c0eaa10ec0eaa10ec058dbc2efc0b356c3cc0eac0eaa10e985813a04f1328af3fd75ecb',
+        'access_token' => $access_token,
         'count' => $count,
         'v' => '5.62'
     );
@@ -33,7 +37,7 @@ function getMemes($count, $owner, $album){
 function getRevisorsFromGroup($time, $count){
     $request_params = array(
         'owner_id' => -72869598,
-        'access_token' => 'c0eaa10ec0eaa10ec058dbc2efc0b356c3cc0eac0eaa10e985813a04f1328af3fd75ecb',
+        'access_token' => $access_token,
         'count' => $count,
         'filter' => 'others',
         'v' => '5.62'
